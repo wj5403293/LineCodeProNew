@@ -1,0 +1,107 @@
+﻿2026-06-27T08:45:51.9225597Z ##[group]Run ./gradlew :app:testDebugUnitTest
+2026-06-27T08:45:51.9225985Z [36;1m./gradlew :app:testDebugUnitTest[0m
+2026-06-27T08:45:51.9253688Z shell: /usr/bin/bash -e {0}
+2026-06-27T08:45:51.9253945Z env:
+2026-06-27T08:45:51.9254261Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64
+2026-06-27T08:45:51.9254801Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64
+2026-06-27T08:45:51.9255256Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-06-27T08:45:51.9255590Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-06-27T08:45:51.9255910Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-06-27T08:45:51.9256214Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-06-27T08:45:51.9256653Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-06-27T08:45:51.9257148Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-06-27T08:45:51.9257487Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-06-27T08:45:51.9257757Z ##[endgroup]
+2026-06-27T08:45:52.4389807Z Downloading https://mirrors.cloud.tencent.com/gradle/gradle-9.4.1-bin.zip
+2026-06-27T08:45:58.5150013Z .............10%.............20%.............30%.............40%.............50%.............60%..............70%.............80%.............90%.............100%
+2026-06-27T08:46:00.2128491Z 
+2026-06-27T08:46:00.2130346Z Welcome to Gradle 9.4.1!
+2026-06-27T08:46:00.2130834Z 
+2026-06-27T08:46:00.2133269Z Here are the highlights of this release:
+2026-06-27T08:46:00.2134087Z  - Java 26 support
+2026-06-27T08:46:00.2134566Z  - Non-class-based JVM tests
+2026-06-27T08:46:00.2139428Z  - Enhanced console progress bar
+2026-06-27T08:46:00.2140118Z 
+2026-06-27T08:46:00.2140705Z For more details see https://docs.gradle.org/9.4.1/release-notes.html
+2026-06-27T08:46:00.2141394Z 
+2026-06-27T08:46:00.4119508Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-06-27T08:47:35.1135725Z > Task :app:preBuild UP-TO-DATE
+2026-06-27T08:47:35.1136335Z > Task :app:preDebugBuild UP-TO-DATE
+2026-06-27T08:47:35.1136786Z > Task :ipc:preBuild UP-TO-DATE
+2026-06-27T08:47:35.1137265Z > Task :ipc:preDebugBuild UP-TO-DATE
+2026-06-27T08:47:36.0151646Z > Task :app:generateDebugResources
+2026-06-27T08:47:36.3121424Z > Task :app:packageDebugResources
+2026-06-27T08:47:36.3123035Z > Task :ipc:processDebugNavigationResources
+2026-06-27T08:47:36.6119306Z > Task :app:processDebugNavigationResources
+2026-06-27T08:47:36.9119096Z > Task :ipc:compileDebugAidl
+2026-06-27T08:47:40.1124103Z > Task :app:compileDebugAidl NO-SOURCE
+2026-06-27T08:47:40.1139304Z > Task :ipc:generateDebugResources
+2026-06-27T08:47:40.1169258Z > Task :ipc:packageDebugResources
+2026-06-27T08:47:40.3121180Z > Task :app:parseDebugLocalResources
+2026-06-27T08:47:43.4129584Z > Task :ipc:parseDebugLocalResources
+2026-06-27T08:47:43.5118115Z > Task :ipc:javaPreCompileDebug
+2026-06-27T08:47:43.5119348Z > Task :app:javaPreCompileDebug
+2026-06-27T08:47:43.5120114Z > Task :ipc:writeDebugAarMetadata
+2026-06-27T08:47:43.5120832Z > Task :app:mapDebugSourceSetPaths
+2026-06-27T08:47:43.5121534Z > Task :ipc:generateDebugRFile
+2026-06-27T08:47:43.5122194Z > Task :app:checkDebugAarMetadata
+2026-06-27T08:47:43.5122869Z > Task :ipc:compileDebugKotlin NO-SOURCE
+2026-06-27T08:47:43.5123547Z > Task :app:generateDebugRFile
+2026-06-27T08:47:49.8118532Z > Task :ipc:compileDebugJavaWithJavac
+2026-06-27T08:47:49.8119091Z > Task :ipc:bundleLibCompileToJarDebug
+2026-06-27T08:47:50.6117839Z > Task :app:compileDebugNavigationResources
+2026-06-27T08:47:50.6118442Z > Task :app:compileDebugKotlin NO-SOURCE
+2026-06-27T08:47:57.4119959Z 
+2026-06-27T08:47:57.4120886Z > Task :app:compileDebugJavaWithJavac
+2026-06-27T08:47:57.4125233Z Note: Some input files use or override a deprecated API.
+2026-06-27T08:47:57.4136666Z Note: Recompile with -Xlint:deprecation for details.
+2026-06-27T08:47:58.3159472Z 
+2026-06-27T08:47:58.3198569Z > Task :app:createDebugCompatibleScreenManifests
+2026-06-27T08:47:58.3219392Z > Task :app:extractDeepLinksDebug
+2026-06-27T08:47:58.3229333Z > Task :ipc:extractDeepLinksDebug
+2026-06-27T08:47:58.4158410Z > Task :ipc:mapDebugSourceSetPaths
+2026-06-27T08:47:58.6127030Z > Task :app:preDebugUnitTestBuild UP-TO-DATE
+2026-06-27T08:47:58.6139262Z > Task :ipc:compileDebugLibraryResources
+2026-06-27T08:47:58.6152580Z > Task :app:processDebugJavaRes
+2026-06-27T08:47:58.6169326Z > Task :ipc:bundleLibRuntimeToJarDebug
+2026-06-27T08:47:58.6169935Z > Task :ipc:processDebugJavaRes NO-SOURCE
+2026-06-27T08:47:58.6170518Z > Task :app:javaPreCompileDebugUnitTest
+2026-06-27T08:47:58.6171062Z > Task :ipc:processDebugManifest
+2026-06-27T08:47:58.7132249Z > Task :app:mergeDebugResources
+2026-06-27T08:47:58.7133021Z > Task :app:processDebugMainManifest
+2026-06-27T08:47:58.9136015Z > Task :app:processDebugManifest
+2026-06-27T08:47:58.9136903Z > Task :app:processDebugManifestForPackage
+2026-06-27T08:47:59.1119147Z > Task :app:processDebugResources
+2026-06-27T08:47:59.2118074Z > Task :app:bundleDebugClassesToRuntimeJar
+2026-06-27T08:47:59.2119224Z > Task :app:bundleDebugClassesToCompileJar
+2026-06-27T08:47:59.2119949Z > Task :app:compileDebugUnitTestKotlin NO-SOURCE
+2026-06-27T08:48:00.5119224Z > Task :app:compileDebugUnitTestJavaWithJavac
+2026-06-27T08:48:00.5120265Z > Task :app:processDebugUnitTestJavaRes NO-SOURCE
+2026-06-27T08:48:02.9129289Z 
+2026-06-27T08:48:02.9136680Z > Task :app:testDebugUnitTest
+2026-06-27T08:48:02.9137552Z 
+2026-06-27T08:48:03.0118542Z ToolCallJsonFormatterTest > prettyResultWrapsPlainTextAsJsonText FAILED
+2026-06-27T08:48:03.0119869Z     org.junit.ComparisonFailure at ToolCallJsonFormatterTest.java:17
+2026-06-27T08:48:03.0120405Z 
+2026-06-27T08:48:03.0120780Z ToolCallJsonFormatterTest > prettyResultFormatsJsonObjectText FAILED
+2026-06-27T08:48:03.0121684Z     org.junit.ComparisonFailure at ToolCallJsonFormatterTest.java:9
+2026-06-27T08:48:03.2117464Z 
+2026-06-27T08:48:03.2118126Z 228 tests completed, 2 failed
+2026-06-27T08:48:03.3120837Z 
+2026-06-27T08:48:03.3139223Z > Task :app:testDebugUnitTest FAILED
+2026-06-27T08:48:03.4120849Z gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1782549967842.json
+2026-06-27T08:48:03.4129470Z 
+2026-06-27T08:48:03.4130001Z FAILURE: Build failed with an exception.
+2026-06-27T08:48:03.4130689Z 
+2026-06-27T08:48:03.4131034Z * What went wrong:
+2026-06-27T08:48:03.4132001Z Execution failed for task ':app:testDebugUnitTest'.
+2026-06-27T08:48:03.4133510Z > There were failing tests. See the report at: file:///home/runner/work/LineCodeProNew/LineCodeProNew/app/build/reports/tests/testDebugUnitTest/index.html
+2026-06-27T08:48:03.4134759Z 
+2026-06-27T08:48:03.4135054Z * Try:
+2026-06-27T08:48:03.4135961Z > Run with --scan to get full insights from a Build Scan (powered by Develocity).
+2026-06-27T08:48:03.4136864Z 
+2026-06-27T08:48:03.4137187Z BUILD FAILED in 2m 11s
+2026-06-27T08:48:03.4149391Z 
+2026-06-27T08:48:03.4154304Z [Incubating] Problems report is available at: file:///home/runner/work/LineCodeProNew/LineCodeProNew/build/reports/problems/problems-report.html
+2026-06-27T08:48:03.4155993Z 38 actionable tasks: 38 executed
+2026-06-27T08:48:03.8540716Z ##[error]Process completed with exit code 1.

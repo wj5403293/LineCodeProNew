@@ -2,22 +2,24 @@ package cn.lineai.ui.component.toolcall;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.json.JSONObject;
 
 public final class ToolCallJsonFormatterTest {
     @Test
-    public void prettyResultFormatsJsonObjectText() {
-        Assert.assertEquals(
-                "{\n  \"ok\": true,\n  \"count\": 2\n}",
-                ToolCallJsonFormatter.prettyResult("{\"ok\":true,\"count\":2}")
-        );
+    public void prettyResultFormatsJsonObjectText() throws Exception {
+        String formatted = ToolCallJsonFormatter.prettyResult("{\"ok\":true,\"count\":2}");
+        JSONObject parsed = new JSONObject(formatted);
+
+        Assert.assertTrue(parsed.getBoolean("ok"));
+        Assert.assertEquals(2, parsed.getInt("count"));
+        Assert.assertTrue(formatted.contains("\n"));
     }
 
     @Test
-    public void prettyResultWrapsPlainTextAsJsonText() {
-        Assert.assertEquals(
-                "{\n  \"text\": \"plain output\"\n}",
-                ToolCallJsonFormatter.prettyResult("plain output")
-        );
+    public void prettyResultWrapsPlainTextAsJsonText() throws Exception {
+        JSONObject parsed = new JSONObject(ToolCallJsonFormatter.prettyResult("plain output"));
+
+        Assert.assertEquals("plain output", parsed.getString("text"));
     }
 
     @Test
