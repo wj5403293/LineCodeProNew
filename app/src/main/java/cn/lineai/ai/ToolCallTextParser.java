@@ -55,13 +55,13 @@ public final class ToolCallTextParser {
     private static Result parseInternal(String text, boolean includePartialXml) {
         String source = text == null ? "" : text;
         ArrayList<ToolCall> calls = new ArrayList<>();
-        boolean hasToolMarkup = hasToolMarkup(source);
+        boolean hasToolMarkup = hasToolMarkup(source, includePartialXml);
         String withoutToolCalls = extractTaggedPayloads(source, TOOL_CALLS_TAG, calls);
         String cleanText = extractSingleToolCalls(withoutToolCalls, calls).trim();
         if (includePartialXml) {
             parsePartialXmlToolCalls(cleanText, calls);
         }
-        cleanText = stripOpenToolMarkup(cleanText).trim();
+        cleanText = stripOpenToolMarkup(cleanText, includePartialXml).trim();
         return new Result(cleanText, calls, hasToolMarkup);
     }
 
@@ -260,27 +260,48 @@ public final class ToolCallTextParser {
         return name;
     }
 
-    private static boolean hasToolMarkup(String source) {
+    private static boolean hasToolMarkup(String source, boolean includePartialXml) {
         if (source == null) {
             return false;
         }
         String lower = source.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("<tool_calls") || lower.contains("<tool_call");
+        return lower.contains("<tool_calls")
+                || lower.contains("<tool_call")
+                || (includePartialXml && firstUnclosedPartialToolPrefixIndex(lower) >= 0);
     }
 
-    private static String stripOpenToolMarkup(String text) {
+    private static String stripOpenToolMarkup(String text, boolean includePartialXml) {
         String lower = text.toLowerCase(java.util.Locale.ROOT);
+        int index = firstOpenToolMarkupIndex(lower, includePartialXml);
+        return index >= 0 ? text.substring(0, index) : text;
+    }
+
+    private static int firstOpenToolMarkupIndex(String lower, boolean includePartialXml) {
         int callsIndex = lower.indexOf("<tool_calls");
         int callIndex = lower.indexOf("<tool_call");
-        int index;
-        if (callsIndex < 0) {
-            index = callIndex;
-        } else if (callIndex < 0) {
+        int partialIndex = includePartialXml ? firstUnclosedPartialToolPrefixIndex(lower) : -1;
+        int index = -1;
+        if (callsIndex >= 0) {
             index = callsIndex;
-        } else {
-            index = Math.min(callsIndex, callIndex);
         }
-        return index >= 0 ? text.substring(0, index) : text;
+        if (callIndex >= 0) {
+            index = index < 0 ? callIndex : Math.min(index, callIndex);
+        }
+        if (partialIndex >= 0) {
+            index = index < 0 ? partialIndex : Math.min(index, partialIndex);
+        }
+        return index;
+    }
+
+    private static int firstUnclosedPartialToolPrefixIndex(String lower) {
+        int index = lower.indexOf("<tool_");
+        while (index >= 0) {
+            if (lower.indexOf('>', index) < 0) {
+                return index;
+            }
+            index = lower.indexOf("<tool_", index + 1);
+        }
+        return -1;
     }
 
     private static String unwrapFence(String value) {

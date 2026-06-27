@@ -6,9 +6,9 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import cn.lineai.R;
 import cn.lineai.tool.ToolCall;
@@ -226,9 +226,14 @@ public final class ToolCallGenericView extends BaseToolCallView {
         TextView text = LineTheme.text(getContext(), content, LineTheme.FONT_XS, color, Typeface.NORMAL);
         text.setTypeface(Typeface.MONOSPACE);
         text.setTextIsSelectable(true);
+        text.setSingleLine(false);
+        text.setHorizontallyScrolling(true);
+        text.setIncludeFontPadding(false);
+        text.setLineSpacing(LineTheme.dp(getContext(), 2), 1.0f);
 
-        ScrollView scroll = new ScrollView(getContext());
+        HorizontalScrollView scroll = new HorizontalScrollView(getContext());
         scroll.setFillViewport(false);
+        scroll.setHorizontalScrollBarEnabled(false);
         scroll.setBackground(LineTheme.roundedStroke(getContext(), LineTheme.SURFACE, 8, LineTheme.CODE_BORDER));
         scroll.setOnTouchListener((view, event) -> {
             int action = event.getActionMasked();
@@ -240,8 +245,8 @@ public final class ToolCallGenericView extends BaseToolCallView {
             return false;
         });
         LineTheme.padding(scroll, LineTheme.SM, LineTheme.SM, LineTheme.SM, LineTheme.SM);
-        scroll.addView(text, new ScrollView.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        LayoutParams scrollParams = new LayoutParams(LayoutParams.MATCH_PARENT, LineTheme.dp(getContext(), 220));
+        scroll.addView(text, new HorizontalScrollView.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        LayoutParams scrollParams = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         scrollParams.topMargin = LineTheme.dp(getContext(), 4);
         section.addView(scroll, scrollParams);
         detailsContainer.addView(section, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));

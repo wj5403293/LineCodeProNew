@@ -66,6 +66,33 @@ public final class ToolCallTextParserTest {
     }
 
     @Test
+    public void streamingPreviewPreservesTextWhenToolCallsTagIsPartial() {
+        ToolCallTextParser.Result result = ToolCallTextParser.parseStreamingPreview(
+                "现在修改 `YxAdsPluginDelegate` 的构造方法，让它只做基本初始化，不<tool_cal"
+        );
+
+        Assert.assertEquals(
+                "现在修改 `YxAdsPluginDelegate` 的构造方法，让它只做基本初始化，不",
+                result.getText()
+        );
+        Assert.assertFalse(result.hasToolCalls());
+    }
+
+    @Test
+    public void streamingPreviewPreservesTextBeforeIncompleteToolCallMarkup() {
+        ToolCallTextParser.Result result = ToolCallTextParser.parseStreamingPreview(
+                "现在修改 `YxAdsPluginDelegate` 的构造方法，让它只做基本初始化，不<tool_calls>\n<tool_call"
+        );
+
+        Assert.assertEquals(
+                "现在修改 `YxAdsPluginDelegate` 的构造方法，让它只做基本初始化，不",
+                result.getText()
+        );
+        Assert.assertFalse(result.hasToolCalls());
+        Assert.assertTrue(result.hasToolMarkup());
+    }
+
+    @Test
     public void finalParserDoesNotExecuteIncompleteXmlPreview() {
         ToolCallTextParser.Result result = ToolCallTextParser.parse(
                 "准备读取\n<tool_calls>\n<tool_call name=\"fileread\">"

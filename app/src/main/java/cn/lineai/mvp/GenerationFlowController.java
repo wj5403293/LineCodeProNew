@@ -85,7 +85,7 @@ final class GenerationFlowController {
     private final StringBuilder pendingStreamTextDelta = new StringBuilder();
     private final StringBuilder pendingStreamReasoningDelta = new StringBuilder();
     private final HashMap<String, StringBuilder> streamingRawTextByMessageId = new HashMap<>();
-    private final Set<String> retryNoticeMessageIds = new HashSet<>();
+    private final HashMap<String, String> retryVisibleTextByMessageId = new HashMap<>();
     private final AgentExecutionController.Host agentHost = new AgentExecutionController.Host() {
         @Override
         public String projectPath() {
@@ -358,12 +358,9 @@ final class GenerationFlowController {
             return;
         }
         ChatMessage message = messages.get(index);
-        if (retryNoticeMessageIds.remove(assistantId)) {
-            message = message.withContent("", message.getReasoningContent(), true);
-        }
         StringBuilder rawText = streamingRawTextByMessageId.get(assistantId);
         if (rawText == null) {
-            rawText = new StringBuilder(message.getContent());
+            rawText = new StringBuilder(ModelStreamRetryPolicy.visibleTextBeforeRetryNotice(message.getContent()));
             streamingRawTextByMessageId.put(assistantId, rawText);
         }
         rawText.append(textDelta);
@@ -372,9 +369,13 @@ final class GenerationFlowController {
         ToolCallTextParser.Result parsedToolCalls = maybeToolMarkup
                 ? ToolCallTextParser.parseStreamingPreview(rawTextValue)
                 : null;
-        String visibleText = parsedToolCalls != null && parsedToolCalls.hasToolMarkup()
+        String retryBaseText = retryVisibleTextByMessageId.get(assistantId);
+        String parsedVisibleText = parsedToolCalls != null && parsedToolCalls.hasToolMarkup()
                 ? parsedToolCalls.getText()
-                : message.getContent() + textDelta;
+                : rawTextValue;
+        String visibleText = retryBaseText == null
+                ? parsedVisibleText
+                : ModelStreamRetryPolicy.mergeRetryText(retryBaseText, parsedVisibleText);
         List<ToolCall> toolCalls = parsedToolCalls != null && parsedToolCalls.hasToolMarkup()
                 ? mergeToolCalls(message.getToolCalls(), parsedToolCalls.getToolCalls())
                 : message.getToolCalls();
@@ -397,17 +398,31 @@ final class GenerationFlowController {
             return false;
         }
         String lower = value.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("<tool_call") || lower.contains("<tool_calls");
+        return lower.contains("<tool_call")
+                || lower.contains("<tool_calls")
+                || firstUnclosedPartialToolPrefixIndex(lower) >= 0;
+    }
+
+    private int firstUnclosedPartialToolPrefixIndex(String lower) {
+        int index = lower.indexOf("<tool_");
+        while (index >= 0) {
+            if (lower.indexOf('>', index) < 0) {
+                return index;
+            }
+            index = lower.indexOf("<tool_", index + 1);
+        }
+        return -1;
     }
 
     void cancelActiveGeneration() {
         pendingToolExecution = null;
         clearStreamingRawText();
-        retryNoticeMessageIds.clear();
+        retryVisibleTextByMessageId.clear();
     }
 
     void clearStreamingRawText() {
         streamingRawTextByMessageId.clear();
+        retryVisibleTextByMessageId.clear();
     }
 
     void clearSessionAutoToolConfirmations() {
@@ -500,7 +515,6 @@ final class GenerationFlowController {
     ) {
         mainThread.post(() -> {
             flushPendingAssistantDelta();
-            retryNoticeMessageIds.remove(assistantId);
             if (!chatSessionStore.isActiveGeneration(generationId)) {
                 return;
             }
@@ -511,7 +525,13 @@ final class GenerationFlowController {
             ChatMessage message = messages.get(index);
             String rawResponseText = response.getText();
             StringBuilder rawStream = streamingRawTextByMessageId.remove(assistantId);
-            if (rawResponseText.trim().length() == 0 && rawStream != null) {
+            String retryBaseText = retryVisibleTextByMessageId.remove(assistantId);
+            if (retryBaseText != null) {
+                String retryResponseText = rawResponseText.trim().length() == 0 && rawStream != null
+                        ? rawStream.toString()
+                        : rawResponseText;
+                rawResponseText = ModelStreamRetryPolicy.mergeRetryText(retryBaseText, retryResponseText);
+            } else if (rawResponseText.trim().length() == 0 && rawStream != null) {
                 rawResponseText = rawStream.toString();
             }
             ToolCallTextParser.Result parsedTextToolCalls = ToolCallTextParser.parse(rawResponseText);
@@ -747,7 +767,6 @@ final class GenerationFlowController {
     private void showRetryNotice(int generationId, String assistantId, String notice) {
         mainThread.post(() -> {
             flushPendingAssistantDelta();
-            retryNoticeMessageIds.remove(assistantId);
             if (!chatSessionStore.isActiveGeneration(generationId)) {
                 return;
             }
@@ -756,12 +775,19 @@ final class GenerationFlowController {
                 return;
             }
             ChatMessage message = messages.get(index);
-            ChatMessage next = message.withContent(notice, message.getReasoningContent(), true);
+            String visibleText = ModelStreamRetryPolicy.visibleTextBeforeRetryNotice(message.getContent());
+            retryVisibleTextByMessageId.put(assistantId, visibleText);
+            ChatMessage next = message.withContent(
+                    ModelStreamRetryPolicy.retryNoticeContent(visibleText, notice),
+                    message.getReasoningContent(),
+                    true
+            );
             messages.set(index, next);
-            retryNoticeMessageIds.add(assistantId);
             StringBuilder rawText = streamingRawTextByMessageId.get(assistantId);
             if (rawText != null) {
                 rawText.setLength(0);
+            } else {
+                streamingRawTextByMessageId.put(assistantId, new StringBuilder());
             }
             if (!host.renderStreamingMessage(next)) {
                 host.render();
@@ -891,18 +917,25 @@ final class GenerationFlowController {
     private void failGeneration(int generationId, String assistantId, String text) {
         mainThread.post(() -> {
             flushPendingAssistantDelta();
-            retryNoticeMessageIds.remove(assistantId);
             if (!chatSessionStore.isActiveGeneration(generationId)) {
                 return;
             }
             int index = findMessageIndex(assistantId);
             if (index >= 0) {
                 ChatMessage message = messages.get(index);
-                messages.set(index, message.withContent(text, message.getReasoningContent(), false));
+                String retryBaseText = retryVisibleTextByMessageId.remove(assistantId);
+                String baseContent = retryBaseText == null ? message.getContent() : retryBaseText;
+                messages.set(index, message.withContent(
+                        ModelStreamRetryPolicy.failureContent(baseContent, text),
+                        message.getReasoningContent(),
+                        false
+                ));
             } else {
                 messages.add(new ChatMessage(host.nextId(), ChatMessage.Role.ASSISTANT, text, false));
+                retryVisibleTextByMessageId.remove(assistantId);
             }
             streamingRawTextByMessageId.remove(assistantId);
+            retryVisibleTextByMessageId.remove(assistantId);
             finishActiveGeneration();
             host.persistCurrentConversation();
             host.render();

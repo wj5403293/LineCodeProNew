@@ -38,6 +38,18 @@ public final class ToolCallJsonFormatterTest {
     }
 
     @Test
+    public void prettyResultDoesNotEscapePathSlashesInNestedMcpText() throws Exception {
+        String raw = "[{\"type\":\"text\",\"text\":\"{\\\"ok\\\":true,\\\"prefix\\\":\\\"Lcom/dream/yx_ads/\\\"}\"}]";
+
+        String formatted = ToolCallJsonFormatter.prettyResult(raw);
+        JSONObject parsed = new JSONObject(formatted);
+
+        Assert.assertEquals("Lcom/dream/yx_ads/", parsed.getString("prefix"));
+        Assert.assertTrue(formatted.contains("Lcom/dream/yx_ads/"));
+        Assert.assertFalse(formatted.contains("\\/"));
+    }
+
+    @Test
     public void prettyJsonNormalizesNestedJsonStringValues() throws Exception {
         JSONObject input = new JSONObject()
                 .put("payload", "{\"name\":\"demo\",\"items\":[1,2]}")
@@ -50,6 +62,20 @@ public final class ToolCallJsonFormatterTest {
         Assert.assertEquals(2, parsed.getJSONObject("payload").getJSONArray("items").length());
         Assert.assertEquals("value", parsed.getString("plain"));
         Assert.assertFalse(formatted.contains("\\\"name\\\""));
+    }
+
+    @Test
+    public void prettyJsonDoesNotEscapePathSlashes() throws Exception {
+        JSONObject input = new JSONObject()
+                .put("prefix", "Lcom/dream/yx_ads/")
+                .put("path", "/storage/emulated/0/Download");
+
+        String formatted = ToolCallJsonFormatter.prettyJson(input);
+        JSONObject parsed = new JSONObject(formatted);
+
+        Assert.assertEquals("Lcom/dream/yx_ads/", parsed.getString("prefix"));
+        Assert.assertEquals("/storage/emulated/0/Download", parsed.getString("path"));
+        Assert.assertFalse(formatted.contains("\\/"));
     }
 
     @Test

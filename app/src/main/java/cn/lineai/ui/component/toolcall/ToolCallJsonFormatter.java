@@ -15,9 +15,9 @@ final class ToolCallJsonFormatter {
             return "{}";
         }
         try {
-            return normalizeObject(input).toString(2);
+            return cleanDisplayJson(normalizeObject(input).toString(2));
         } catch (Exception ignored) {
-            return input.toString();
+            return cleanDisplayJson(input.toString());
         }
     }
 
@@ -28,22 +28,22 @@ final class ToolCallJsonFormatter {
         }
         try {
             if (value.startsWith("{")) {
-                return normalizeObject(new JSONObject(value)).toString(2);
+                return cleanDisplayJson(normalizeObject(new JSONObject(value)).toString(2));
             }
             if (value.startsWith("[")) {
                 Object unwrapped = unwrapMcpContentArray(new JSONArray(value));
                 if (unwrapped instanceof JSONObject) {
-                    return ((JSONObject) unwrapped).toString(2);
+                    return cleanDisplayJson(((JSONObject) unwrapped).toString(2));
                 }
                 if (unwrapped instanceof JSONArray) {
-                    return ((JSONArray) unwrapped).toString(2);
+                    return cleanDisplayJson(((JSONArray) unwrapped).toString(2));
                 }
-                return normalizeArray(new JSONArray(value)).toString(2);
+                return cleanDisplayJson(normalizeArray(new JSONArray(value)).toString(2));
             }
         } catch (Exception ignored) {
         }
         try {
-            return new JSONObject().put("text", content == null ? "" : content).toString(2);
+            return cleanDisplayJson(new JSONObject().put("text", content == null ? "" : content).toString(2));
         } catch (Exception ignored) {
             return "{\"text\":\"\"}";
         }
@@ -132,5 +132,9 @@ final class ToolCallJsonFormatter {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    private static String cleanDisplayJson(String json) {
+        return json == null ? "" : json.replace("\\/", "/");
     }
 }

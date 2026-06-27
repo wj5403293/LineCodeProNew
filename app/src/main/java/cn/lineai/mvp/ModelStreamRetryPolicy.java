@@ -4,6 +4,7 @@ import java.util.Locale;
 
 final class ModelStreamRetryPolicy {
     static final int MAX_RETRIES = 3;
+    private static final String RETRY_NOTICE_PREFIX = "连接中断，正在自动重试连接";
 
     private ModelStreamRetryPolicy() {
     }
@@ -44,5 +45,74 @@ final class ModelStreamRetryPolicy {
     static String retryNotice(int retryAttempt) {
         int attempt = Math.max(1, Math.min(MAX_RETRIES, retryAttempt));
         return "连接中断，正在自动重试连接（第 " + attempt + "/" + MAX_RETRIES + " 次）…";
+    }
+
+    static String retryNoticeContent(String currentContent, String notice) {
+        String base = stripRetryNotice(currentContent);
+        String retryNotice = notice == null ? "" : notice;
+        if (base.trim().length() == 0) {
+            return retryNotice;
+        }
+        if (retryNotice.length() == 0) {
+            return base;
+        }
+        return base + "\n\n" + retryNotice;
+    }
+
+    static String visibleTextBeforeRetryNotice(String content) {
+        return stripRetryNotice(content);
+    }
+
+    static String mergeRetryText(String previousVisibleText, String retryText) {
+        String previous = stripRetryNotice(previousVisibleText);
+        String retry = retryText == null ? "" : retryText;
+        if (previous.length() == 0) {
+            return retry;
+        }
+        if (retry.length() == 0) {
+            return previous;
+        }
+        if (retry.startsWith(previous)) {
+            return retry;
+        }
+        if (previous.startsWith(retry)) {
+            return previous;
+        }
+        int overlap = suffixPrefixOverlap(previous, retry);
+        if (overlap > 0) {
+            return previous + retry.substring(overlap);
+        }
+        return previous + retry;
+    }
+
+    static String failureContent(String currentContent, String failureText) {
+        String base = stripRetryNotice(currentContent);
+        String failure = failureText == null ? "" : failureText;
+        if (base.trim().length() == 0) {
+            return failure;
+        }
+        if (failure.trim().length() == 0) {
+            return base;
+        }
+        return base + "\n\n" + failure;
+    }
+
+    private static String stripRetryNotice(String content) {
+        String value = content == null ? "" : content;
+        int separatedNoticeIndex = value.lastIndexOf("\n\n" + RETRY_NOTICE_PREFIX);
+        if (separatedNoticeIndex >= 0) {
+            return value.substring(0, separatedNoticeIndex);
+        }
+        return value.startsWith(RETRY_NOTICE_PREFIX) ? "" : value;
+    }
+
+    private static int suffixPrefixOverlap(String left, String right) {
+        int max = Math.min(left.length(), right.length());
+        for (int size = max; size > 0; size--) {
+            if (left.regionMatches(left.length() - size, right, 0, size)) {
+                return size;
+            }
+        }
+        return 0;
     }
 }
