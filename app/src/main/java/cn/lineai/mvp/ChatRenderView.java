@@ -8,6 +8,8 @@ import java.util.List;
 public interface ChatRenderView {
     void render(ChatUiState state);
 
+    void renderChrome(ChatUiState state);
+
     boolean renderStreamingMessage(ChatMessage message);
 
     void setComposerDraft(String text);

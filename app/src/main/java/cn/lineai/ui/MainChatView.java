@@ -391,6 +391,16 @@ public final class MainChatView extends FrameLayout implements MainContract.View
     }
 
     @Override
+    public void renderChrome(ChatUiState state) {
+        lastState = state;
+        headerView.render(state);
+        composerView.render(state);
+        if (drawerView.getVisibility() == VISIBLE) {
+            renderDrawer(state);
+        }
+    }
+
+    @Override
     public boolean renderStreamingMessage(ChatMessage message) {
         return messageListView.renderStreamingMessage(message);
     }

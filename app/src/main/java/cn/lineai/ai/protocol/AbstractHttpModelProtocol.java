@@ -7,11 +7,10 @@ import cn.lineai.log.ErrorLogRedactor;
 import cn.lineai.model.AiBehaviorSettings;
 import cn.lineai.security.UrlPolicy;
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -170,10 +169,12 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
             }
         }
 
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8));
-        writer.write(body.toString());
-        writer.flush();
-        writer.close();
+        byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+        connection.setFixedLengthStreamingMode(payload.length);
+        OutputStream output = connection.getOutputStream();
+        output.write(payload);
+        output.flush();
+        output.close();
         return connection;
     }
 

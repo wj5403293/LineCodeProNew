@@ -1,10 +1,14 @@
 package cn.lineai.mvp;
 
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 final class ModelStreamRetryPolicy {
     static final int MAX_RETRIES = 3;
     private static final String RETRY_NOTICE_PREFIX = "连接中断，正在自动重试连接";
+    private static final Pattern TRANSIENT_HTTP_STATUS = Pattern.compile(
+            "(^|[^0-9])(408|409|425|429|500|502|503|504)([^0-9]|$)"
+    );
 
     private ModelStreamRetryPolicy() {
     }
@@ -32,14 +36,10 @@ final class ModelStreamRetryPolicy {
                 || value.contains("connection")
                 || value.contains("reset")
                 || value.contains("refused")
-                || value.contains("http 408")
-                || value.contains("http 409")
-                || value.contains("http 425")
-                || value.contains("http 429")
-                || value.contains("http 500")
-                || value.contains("http 502")
-                || value.contains("http 503")
-                || value.contains("http 504");
+                || value.contains("gateway timeout")
+                || value.contains("gateway time-out")
+                || value.contains("upstream timeout")
+                || TRANSIENT_HTTP_STATUS.matcher(value).find();
     }
 
     static String retryNotice(int retryAttempt) {

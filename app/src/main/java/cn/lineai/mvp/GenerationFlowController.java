@@ -57,6 +57,8 @@ final class GenerationFlowController {
 
         void render();
 
+        void renderChrome();
+
         boolean renderStreamingMessage(ChatMessage message);
 
         void stopGenerationKeepAlive();
@@ -545,8 +547,9 @@ final class GenerationFlowController {
             if (finalText.trim().length() == 0 && finalReasoning.trim().length() == 0 && !hasToolCalls) {
                 finalText = "模型没有返回文本。";
             }
-            messages.set(index, message.withContent(finalText, finalReasoning, false)
-                    .withToolCalls(toolCalls, false));
+            ChatMessage finalMessage = message.withContent(finalText, finalReasoning, false)
+                    .withToolCalls(toolCalls, false);
+            messages.set(index, finalMessage);
             if (hasToolCalls) {
                 if (!generationController.canExecuteToolCalls(selectedModel, usedToolCallCount, toolCalls.size())) {
                     messages.add(new ChatMessage(host.nextId(), ChatMessage.Role.ASSISTANT,
@@ -570,7 +573,10 @@ final class GenerationFlowController {
             finishActiveGeneration();
             host.persistCurrentConversation();
             scheduleMemoryExtractionIfNeeded(selectedModel);
-            host.render();
+            host.renderChrome();
+            if (!host.renderStreamingMessage(finalMessage)) {
+                host.render();
+            }
         });
     }
 

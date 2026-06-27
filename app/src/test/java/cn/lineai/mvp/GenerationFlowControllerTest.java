@@ -97,6 +97,10 @@ public final class GenerationFlowControllerTest {
         }
 
         @Override
+        public void renderChrome() {
+        }
+
+        @Override
         public boolean renderStreamingMessage(ChatMessage message) {
             return true;
         }

@@ -1015,6 +1015,11 @@ public final class MainCoordinator extends MainCoordinatorDelegates {
                     }
 
                     @Override
+                    public void renderChrome() {
+                        MainCoordinator.this.renderChrome();
+                    }
+
+                    @Override
                     public boolean renderStreamingMessage(ChatMessage message) {
                         if (view != null) {
                             return view.renderStreamingMessage(message);
@@ -1483,8 +1488,19 @@ public final class MainCoordinator extends MainCoordinatorDelegates {
         if (view == null) {
             return;
         }
+        view.render(assembleChatUiState());
+    }
+
+    private void renderChrome() {
+        if (view == null) {
+            return;
+        }
+        view.renderChrome(assembleChatUiState());
+    }
+
+    private cn.lineai.model.ChatUiState assembleChatUiState() {
         String activeChatMode = syncModePermission();
-        view.render(chatUiStateAssembler.assemble(
+        return chatUiStateAssembler.assemble(
                 projectState.label(),
                 projectState.source(),
                 projectState.path(),
@@ -1492,7 +1508,7 @@ public final class MainCoordinator extends MainCoordinatorDelegates {
                 activeChatMode,
                 chatSessionStore.isStreaming(),
                 messages
-        ));
+        );
     }
 
     private void resetTodoState() {

@@ -63,4 +63,13 @@ public final class ModelStreamRetryPolicyTest {
         Assert.assertFalse(ModelStreamRetryPolicy.shouldRetry("模型流式通信失败: socket reset", 3));
         Assert.assertFalse(ModelStreamRetryPolicy.shouldRetry("HTTP 401: invalid api key", 0));
     }
+
+    @Test
+    public void retriesGatewayTimeoutMessagesShownToUser() {
+        Assert.assertTrue(ModelStreamRetryPolicy.shouldRetry("504 Gateway Timeout", 0));
+        Assert.assertTrue(ModelStreamRetryPolicy.shouldRetry("Gateway Timeout (504)", 0));
+        Assert.assertTrue(ModelStreamRetryPolicy.shouldRetry("status=504 upstream timeout", 0));
+        Assert.assertTrue(ModelStreamRetryPolicy.shouldRetry("HTTP/1.1 504 Gateway Time-out", 0));
+        Assert.assertTrue(ModelStreamRetryPolicy.shouldRetry("模型通信失败：\n504", 0));
+    }
 }
