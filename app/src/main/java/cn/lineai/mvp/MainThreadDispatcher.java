@@ -60,4 +60,8 @@ public final class MainThreadDispatcher {
     public boolean isMainThread() {
         return Looper.myLooper() == Looper.getMainLooper();
     }
+
+    boolean isDispatchInline() {
+        return dispatchInline;
+    }
 }

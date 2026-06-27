@@ -48,6 +48,7 @@ public final class ChatMessage {
     private final List<InputAttachment> attachments;
     private final String modelSwitchNotification;
     private final long toolDurationMs;
+    private final long streamStartedAtMs;
 
     public ChatMessage(String id, Role role, String content, boolean streaming) {
         this(id, role, content, "", streaming, false, false);
@@ -164,7 +165,7 @@ public final class ChatMessage {
     ) {
         this(id, role, content, reasoningContent, streaming, hidden, excludeFromContext,
                 toolCalls, toolResults, toolCallId, toolName, error, diffId, reviewState, reviewMessage,
-                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, 0L);
+                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, 0L, 0L);
     }
 
     public ChatMessage(
@@ -177,6 +178,23 @@ public final class ChatMessage {
             List<InputAttachment> attachments,
             String modelSwitchNotification,
             long toolDurationMs
+    ) {
+        this(id, role, content, reasoningContent, streaming, hidden, excludeFromContext,
+                toolCalls, toolResults, toolCallId, toolName, error, diffId, reviewState, reviewMessage,
+                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs, 0L);
+    }
+
+    public ChatMessage(
+            String id, Role role, String content, String reasoningContent,
+            boolean streaming, boolean hidden, boolean excludeFromContext,
+            List<ToolCall> toolCalls, List<ToolResult> toolResults,
+            String toolCallId, String toolName, boolean error,
+            String diffId, String reviewState, String reviewMessage,
+            String compactStatus, String responseInputItemJson,
+            List<InputAttachment> attachments,
+            String modelSwitchNotification,
+            long toolDurationMs,
+            long streamStartedAtMs
     ) {
         this.id = id;
         this.role = role == null ? Role.USER : role;
@@ -200,6 +218,7 @@ public final class ChatMessage {
                 : Collections.unmodifiableList(new ArrayList<>(attachments));
         this.modelSwitchNotification = modelSwitchNotification == null ? "" : modelSwitchNotification;
         this.toolDurationMs = Math.max(0L, toolDurationMs);
+        this.streamStartedAtMs = Math.max(0L, streamStartedAtMs);
     }
 
     public String getId() {
@@ -282,6 +301,10 @@ public final class ChatMessage {
         return toolDurationMs;
     }
 
+    public long getStreamStartedAtMs() {
+        return streamStartedAtMs;
+    }
+
     public String getCompactStatus() {
         return compactStatus;
     }
@@ -317,45 +340,55 @@ public final class ChatMessage {
     public ChatMessage withContent(String nextContent, String nextReasoningContent, boolean nextStreaming) {
         return new ChatMessage(id, role, nextContent, nextReasoningContent, nextStreaming, hidden,
                 excludeFromContext, toolCalls, toolResults, toolCallId, toolName, error, diffId, reviewState, reviewMessage,
-                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs);
+                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs,
+                nextStreaming ? streamStartedAtMs : 0L);
     }
 
     public ChatMessage withToolCalls(List<ToolCall> nextToolCalls, boolean nextHidden) {
         return new ChatMessage(id, role, content, reasoningContent, streaming, nextHidden,
                 excludeFromContext, nextToolCalls, toolResults, toolCallId, toolName, error, diffId, reviewState, reviewMessage,
-                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs);
+                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs, streamStartedAtMs);
     }
 
     public ChatMessage withToolResults(List<ToolResult> nextToolResults) {
         return new ChatMessage(id, role, content, reasoningContent, streaming, hidden,
                 excludeFromContext, toolCalls, nextToolResults, toolCallId, toolName, error, diffId, reviewState, reviewMessage,
-                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs);
+                compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs, streamStartedAtMs);
     }
 
     public ChatMessage withToolReview(String nextDiffId, String nextReviewState, String nextReviewMessage) {
         return new ChatMessage(id, role, content, reasoningContent, streaming, hidden,
                 excludeFromContext, toolCalls, toolResults, toolCallId, toolName, error,
-                nextDiffId, nextReviewState, nextReviewMessage, compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs);
+                nextDiffId, nextReviewState, nextReviewMessage, compactStatus, responseInputItemJson, attachments,
+                modelSwitchNotification, toolDurationMs, streamStartedAtMs);
     }
 
     public ChatMessage withExcludeFromContext(boolean nextExcludeFromContext) {
         return new ChatMessage(id, role, content, reasoningContent, streaming, hidden,
                 nextExcludeFromContext, toolCalls, toolResults, toolCallId, toolName, error,
-                diffId, reviewState, reviewMessage, compactStatus, responseInputItemJson, attachments, modelSwitchNotification, toolDurationMs);
+                diffId, reviewState, reviewMessage, compactStatus, responseInputItemJson, attachments,
+                modelSwitchNotification, toolDurationMs, streamStartedAtMs);
     }
 
     public ChatMessage withCompactStatus(String nextCompactStatus, boolean nextStreaming) {
         return new ChatMessage(id, role, content, reasoningContent, nextStreaming, hidden,
                 excludeFromContext, toolCalls, toolResults, toolCallId, toolName, error,
                 diffId, reviewState, reviewMessage, nextCompactStatus, responseInputItemJson, attachments,
-                modelSwitchNotification, toolDurationMs);
+                modelSwitchNotification, toolDurationMs, nextStreaming ? streamStartedAtMs : 0L);
     }
 
     public ChatMessage withResponseInputItemJson(String nextResponseInputItemJson) {
         return new ChatMessage(id, role, content, reasoningContent, streaming, hidden,
                 excludeFromContext, toolCalls, toolResults, toolCallId, toolName, error,
                 diffId, reviewState, reviewMessage, compactStatus, nextResponseInputItemJson, attachments,
-                modelSwitchNotification, toolDurationMs);
+                modelSwitchNotification, toolDurationMs, streamStartedAtMs);
+    }
+
+    public ChatMessage withStreamStartedAtMs(long nextStreamStartedAtMs) {
+        return new ChatMessage(id, role, content, reasoningContent, streaming, hidden,
+                excludeFromContext, toolCalls, toolResults, toolCallId, toolName, error,
+                diffId, reviewState, reviewMessage, compactStatus, responseInputItemJson, attachments,
+                modelSwitchNotification, toolDurationMs, nextStreamStartedAtMs);
     }
 
     public static ChatMessage toolResult(String id, String content, String toolCallId, String toolName, boolean error) {

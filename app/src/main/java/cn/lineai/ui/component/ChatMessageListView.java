@@ -351,6 +351,14 @@ public final class ChatMessageListView extends FrameLayout {
             }
             ChatMessage current = visibleMessages.get(index);
             if (sameMessage(current, message)) {
+                String ck = cacheKey(message);
+                View cached = rowCache.get(ck);
+                if (cached instanceof AssistantMessageView
+                        && message.isStreaming()
+                        && message.getContent().length() == 0
+                        && message.getReasoningContent().length() == 0) {
+                    bindCachedView(cached, message);
+                }
                 return true;
             }
             visibleMessages.set(index, message);
@@ -553,6 +561,7 @@ public final class ChatMessageListView extends FrameLayout {
                     && stringEquals(a.getContent(), b.getContent())
                     && stringEquals(a.getReasoningContent(), b.getReasoningContent())
                     && a.isStreaming() == b.isStreaming()
+                    && a.getStreamStartedAtMs() == b.getStreamStartedAtMs()
                     && a.isHidden() == b.isHidden()
                     && stringEquals(a.getCompactStatus(), b.getCompactStatus())
                     && stringEquals(a.getModelSwitchNotification(), b.getModelSwitchNotification())

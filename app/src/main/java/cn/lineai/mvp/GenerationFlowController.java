@@ -39,6 +39,7 @@ import org.json.JSONObject;
 
 final class GenerationFlowController {
     private static final long STREAM_RENDER_INTERVAL_MS = 80L;
+    private static final long STREAM_WAITING_TICK_MS = 1000L;
     private static final String SHELL_EXECUTE_TOOL = "shell_execute";
     private static final String TOOL_REVIEW_SESSION_AUTO = "session_auto";
 
@@ -237,9 +238,12 @@ final class GenerationFlowController {
         ArrayList<ModelMessage> requestMessages = modelPromptController.buildModelMessages(userInput);
         String assistantId = host.nextId();
         streamingRawTextByMessageId.put(assistantId, new StringBuilder());
-        messages.add(new ChatMessage(assistantId, ChatMessage.Role.ASSISTANT, "", true));
+        ChatMessage assistantMessage = new ChatMessage(assistantId, ChatMessage.Role.ASSISTANT, "", true)
+                .withStreamStartedAtMs(SystemClock.uptimeMillis());
+        messages.add(assistantMessage);
         host.persistCurrentConversation();
         host.render();
+        scheduleWaitingAssistantTick(generationId, assistantId);
 
         backgroundTasks.execute("linecode-model-stream", () -> {
             streamModelWithRetry(generationId, assistantId, selectedModel, requestMessages, cancellationToken, 0);
@@ -721,11 +725,41 @@ final class GenerationFlowController {
         ArrayList<ModelMessage> nextRequestMessages = modelPromptController.buildModelMessages("", usedToolCallCount);
         String nextAssistantId = host.nextId();
         streamingRawTextByMessageId.put(nextAssistantId, new StringBuilder());
-        messages.add(new ChatMessage(nextAssistantId, ChatMessage.Role.ASSISTANT, "", true));
+        messages.add(new ChatMessage(nextAssistantId, ChatMessage.Role.ASSISTANT, "", true)
+                .withStreamStartedAtMs(SystemClock.uptimeMillis()));
         host.render();
+        scheduleWaitingAssistantTick(generationId, nextAssistantId);
         backgroundTasks.execute("linecode-tool-continuation", () -> {
             streamModelWithRetry(generationId, nextAssistantId, selectedModel, nextRequestMessages, cancellationToken, usedToolCallCount);
         });
+    }
+
+    private void scheduleWaitingAssistantTick(int generationId, String assistantId) {
+        if (mainThread.isDispatchInline()) {
+            return;
+        }
+        mainThread.postDelayed(() -> refreshWaitingAssistant(generationId, assistantId), STREAM_WAITING_TICK_MS);
+    }
+
+    private void refreshWaitingAssistant(int generationId, String assistantId) {
+        if (!chatSessionStore.isActiveGeneration(generationId)) {
+            return;
+        }
+        int index = findMessageIndex(assistantId);
+        if (index < 0) {
+            return;
+        }
+        ChatMessage message = messages.get(index);
+        if (!message.isStreaming()
+                || message.getContent().length() > 0
+                || message.getReasoningContent().length() > 0
+                || message.hasToolCalls()) {
+            return;
+        }
+        if (!host.renderStreamingMessage(message)) {
+            host.render();
+        }
+        scheduleWaitingAssistantTick(generationId, assistantId);
     }
 
     private void streamModelWithRetry(

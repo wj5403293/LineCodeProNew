@@ -1,6 +1,7 @@
 package cn.lineai.ui.component;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.widget.LinearLayout;
 import cn.lineai.model.ChatMessage;
@@ -110,7 +111,9 @@ public final class AssistantMessageView extends LinearLayout {
             return;
         }
         compactBlockView.setVisibility(GONE);
-        String content = message.isStreaming() && message.getContent().length() == 0 && !hasReasoning ? "..." : message.getContent();
+        String content = message.isStreaming() && message.getContent().length() == 0 && !hasReasoning
+                ? waitingContent(message.getStreamStartedAtMs(), SystemClock.uptimeMillis())
+                : message.getContent();
         contentView.setCodeWrapEnabled(codeWrapEnabled);
         contentView.setLinkHandler(markdownLinkHandler);
 
@@ -150,6 +153,10 @@ public final class AssistantMessageView extends LinearLayout {
         lastThinkingAutoExpand = thinkingAutoExpand;
         lastThinkingScrollable = thinkingScrollable;
         lastCompactStatus = "";
+    }
+
+    static String waitingContent(long streamStartedAtMs, long nowMs) {
+        return AssistantWaitingLabel.format(streamStartedAtMs, nowMs);
     }
 
     public void setToolReviewListener(ToolReviewListener listener) {
