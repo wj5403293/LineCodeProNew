@@ -1,0 +1,72 @@
+package cn.lineai.tool.builtin;
+
+import android.content.Context;
+import cn.lineai.R;
+import cn.lineai.service.LineCodeAccessibilityService;
+import cn.lineai.tool.BaseTool;
+import cn.lineai.tool.ToolCategory;
+import cn.lineai.tool.ToolContext;
+import cn.lineai.tool.ToolResult;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+public final class PhoneClickViewTool extends BaseTool {
+    private final Context context;
+
+    public PhoneClickViewTool(Context context) {
+        this.context = context == null ? null : context.getApplicationContext();
+    }
+
+    @Override
+    public String getName() {
+        return "phone_click_view";
+    }
+
+    @Override
+    public String getDescription() {
+        return context == null ? "Tap a View in the current window." : context.getString(R.string.phone_tool_click_view_description);
+    }
+
+    @Override
+    public ToolCategory getCategory() {
+        return ToolCategory.SYSTEM;
+    }
+
+    @Override
+    public JSONObject getParameters() throws JSONException {
+        return new JSONObject()
+                .put("type", "object")
+                .put("properties", new JSONObject()
+                        .put("resource_id", new JSONObject().put("type", "string").put("description", "View 的 resource id，可传完整 id 或简写 name"))
+                        .put("text", new JSONObject().put("type", "string").put("description", "View 上显示的文本"))
+                        .put("x", new JSONObject().put("type", "integer").put("description", "屏幕坐标 x"))
+                        .put("y", new JSONObject().put("type", "integer").put("description", "屏幕坐标 y")))
+                .put("required", new JSONArray());
+    }
+
+    @Override
+    public ToolResult execute(JSONObject input, ToolContext context) {
+        LineCodeAccessibilityService service = PhoneControlToolSupport.service(this.context);
+        if (service == null) {
+            return PhoneControlToolSupport.unavailable(this, this.context);
+        }
+        String resourceId = input.optString("resource_id");
+        String text = input.optString("text");
+        int x = input.optInt("x", Integer.MIN_VALUE);
+        int y = input.optInt("y", Integer.MIN_VALUE);
+        if (resourceId.length() > 0) {
+            boolean success = service.clickById(resourceId);
+            return success ? ok(this.context.getString(R.string.phone_tool_click_view_success, resourceId)) : error(this.context.getString(R.string.phone_tool_click_view_failed, resourceId));
+        }
+        if (text.length() > 0) {
+            boolean success = service.clickByText(text);
+            return success ? ok(this.context.getString(R.string.phone_tool_click_view_success, text)) : error(this.context.getString(R.string.phone_tool_click_view_failed, text));
+        }
+        if (x != Integer.MIN_VALUE && y != Integer.MIN_VALUE) {
+            boolean success = service.clickByCoordinates(x, y);
+            return success ? ok(this.context.getString(R.string.phone_tool_click_point_success, x, y)) : error(this.context.getString(R.string.phone_tool_click_point_failed, x, y));
+        }
+        return error(this.context.getString(R.string.phone_tool_click_view_missing_target));
+    }
+}

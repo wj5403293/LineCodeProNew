@@ -1,0 +1,500 @@
+package cn.lineai.data.repository;
+
+import android.content.ContentValues;
+import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import cn.lineai.ai.prompt.StringTemplate;
+import cn.lineai.data.db.LineCodeDatabase;
+import cn.lineai.model.MemoryOverviewState;
+import cn.lineai.workspace.WorkspacePaths;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+
+public final class LearningContextRepository extends BaseRepository implements LearningContextStore {
+    private static final int SCAN_LIMIT = 120;
+    private static final int OVERVIEW_LIMIT = 200;
+    private static final double WORKING_MEMORY_BOOST = 0.30;
+
+    private final Context context;
+    private final WorkspacePaths workspacePaths;
+    private final PromptTemplateRepository promptTemplateRepository;
+    private final ConversationIndexer conversationIndexer;
+
+    public LearningContextRepository(Context context) {
+        super(LineCodeDatabase.getInstance(context.getApplicationContext()));
+        this.context = context.getApplicationContext();
+        this.workspacePaths = new WorkspacePaths(this.context);
+        this.promptTemplateRepository = new PromptTemplateRepository(this.context);
+        this.conversationIndexer = new ConversationIndexer(database);
+    }
+
+    @Override
+    public synchronized String buildLearningContext(String projectId, String userInput, String excludeConversationId) {
+        List<MemoryRanker.Candidate> workingMemory = MemoryRanker.rank(readWorkingMemory(projectId), userInput, 5, true, WORKING_MEMORY_BOOST);
+        List<MemoryRanker.Candidate> memories = MemoryRanker.rank(readMemories(projectId), userInput, 6, false);
+        List<MemoryRanker.Candidate> history = MemoryRanker.rank(readConversationIndex(projectId, excludeConversationId), userInput, 6, false);
+        if (history.isEmpty()) {
+            history = MemoryRanker.rank(readConversationMessages(projectId, excludeConversationId), userInput, 6, false);
+        }
+        List<MemoryRanker.Candidate> skills = MemoryRanker.rank(readSkills(), userInput, 8, true);
+        markMemoriesUsed(memories);
+
+        HashMap<String, String> values = new HashMap<>();
+        values.put("WORKING_MEMORY_SECTION", section("### 短期/工作记忆（当前项目 RAG Top-K）", workingMemory));
+        values.put("MEMORY_SECTION", section("### 长期记忆（本地检索 Top-K）", memories));
+        values.put("HISTORY_SECTION", section("### 相关聊天记录（当前项目本地检索 Top-K）", history));
+        values.put("SKILL_PATHS_SECTION", skillPathsSection(projectId));
+        values.put("SKILLS_SECTION", section("### 可用 Skills（RAG Top-K）", skills));
+        values.put("PRIVATE_BOUNDARY_SECTION", privateBoundarySection());
+        return template().render(values);
+    }
+
+    @Override
+    public synchronized MemoryOverviewState getOverview(String projectId) {
+        String safeProjectId = safe(projectId);
+        return new MemoryOverviewState(
+                safeProjectId,
+                readOverviewMemories(MemoryOverviewState.Memory.SCOPE_USER, safeProjectId),
+                readOverviewMemories(MemoryOverviewState.Memory.SCOPE_PROJECT, safeProjectId),
+                readOverviewMemories(MemoryOverviewState.Memory.SCOPE_ENVIRONMENT, safeProjectId),
+                readOverviewWorkingMemory(safeProjectId),
+                readOverviewHistory(safeProjectId)
+        );
+    }
+
+    @Override
+    public synchronized void saveMemory(String id, String scope, String projectId, String content) {
+        saveMemoryInternal(id, scope, projectId, content, "manual", 1.0);
+    }
+
+    @Override
+    public synchronized void saveExtractedMemory(String scope, String projectId, String content, double confidence) {
+        String normalizedScope = normalizeScope(scope);
+        String existingId = findSimilarMemoryId(normalizedScope, projectId, content);
+        saveMemoryInternal(existingId, normalizedScope, projectId, content, "auto", confidence);
+    }
+
+    private void saveMemoryInternal(String id, String scope, String projectId, String content, String source, double confidence) {
+        String normalizedContent = safe(content).trim();
+        if (normalizedContent.length() == 0) {
+            return;
+        }
+        String normalizedScope = normalizeScope(scope);
+        ExistingMemory existing = readExistingMemory(id);
+        long now = System.currentTimeMillis();
+        ContentValues values = new ContentValues();
+        values.put("id", existing.id.length() == 0 ? "mem_" + UUID.randomUUID().toString().replace("-", "") : existing.id);
+        values.put("scope", normalizedScope);
+        if (MemoryOverviewState.Memory.SCOPE_USER.equals(normalizedScope)) {
+            values.putNull("project_id");
+        } else {
+            values.put("project_id", safe(projectId));
+        }
+        values.put("content", normalizedContent);
+        values.put("source", existing.source.length() == 0 ? safeSource(source) : existing.source);
+        double resolvedConfidence = confidence <= 0 ? 1.0 : confidence;
+        values.put("confidence", existing.confidence <= 0 ? resolvedConfidence : Math.max(existing.confidence, resolvedConfidence));
+        values.put("created_at", existing.createdAt <= 0 ? now : existing.createdAt);
+        values.put("updated_at", now);
+        if (existing.lastUsedAt > 0) {
+            values.put("last_used_at", existing.lastUsedAt);
+        } else {
+            values.putNull("last_used_at");
+        }
+        values.put("use_count", Math.max(0, existing.useCount));
+        values.put("raw_json", "");
+        database.getWritableDatabase().insertWithOnConflict("memories", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    @Override
+    public synchronized void deleteMemory(String id) {
+        String safeId = safe(id);
+        if (safeId.length() == 0) {
+            return;
+        }
+        SQLiteDatabase db = database.getWritableDatabase();
+        db.delete("memories", "id = ?", new String[] {safeId});
+        try {
+            db.delete("memories_fts", "id = ?", new String[] {safeId});
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    @Override
+    public synchronized void indexConversation(String projectId, ConversationRecord conversation) {
+        conversationIndexer.indexConversation(projectId, conversation);
+    }
+
+    static List<String> extractKeywords(String input) {
+        return TextTokenizer.extractKeywords(input);
+    }
+
+    static double relevanceScore(String query, String text) {
+        return MemoryRanker.relevanceScore(query, text);
+    }
+
+    static double recencyBoost(long updatedAt, long now) {
+        return MemoryRanker.recencyBoost(updatedAt, now);
+    }
+
+    static double rankingScore(String query, String text, long updatedAt, long now, double boost) {
+        return MemoryRanker.rankingScore(query, text, updatedAt, now, boost);
+    }
+
+    private List<MemoryRanker.Candidate> readWorkingMemory(String projectId) {
+        ArrayList<MemoryRanker.Candidate> items = new ArrayList<>();
+        String now = String.valueOf(System.currentTimeMillis());
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT source, content, updated_at FROM working_memory "
+                        + "WHERE (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') "
+                        + "AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?) ORDER BY updated_at DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), now, String.valueOf(SCAN_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                String source = value(cursor, "source");
+                String content = compact(value(cursor, "content"), 420);
+                items.add(new MemoryRanker.Candidate("", content + " " + source,
+                        cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                        "- [" + source + "] " + content));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryRanker.Candidate> readMemories(String projectId) {
+        ArrayList<MemoryRanker.Candidate> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT id, scope, project_id, source, confidence, content, updated_at FROM memories "
+                        + "WHERE (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '' OR scope = 'user') "
+                        + "ORDER BY updated_at DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), String.valueOf(SCAN_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                String scope = value(cursor, "scope");
+                String memoryProject = value(cursor, "project_id");
+                String source = value(cursor, "source");
+                String content = compact(value(cursor, "content"), 520);
+                String scopeLabel = memoryProject.length() == 0 ? scope : scope + ":" + memoryProject;
+                String confidence = String.format(Locale.ROOT, "%.2f", cursor.getDouble(cursor.getColumnIndexOrThrow("confidence")));
+                items.add(new MemoryRanker.Candidate(value(cursor, "id"), content + " " + source + " " + scopeLabel,
+                        cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                        "- [" + scopeLabel + "/" + source + ", confidence " + confidence + "] " + content));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryRanker.Candidate> readConversationIndex(String projectId, String excludeConversationId) {
+        ArrayList<MemoryRanker.Candidate> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT conversation_id, role, text, title, updated_at FROM conversation_index "
+                        + "WHERE (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') "
+                        + "AND (? = '' OR conversation_id != ?) ORDER BY updated_at DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), safe(excludeConversationId), safe(excludeConversationId), String.valueOf(SCAN_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                String title = value(cursor, "title");
+                String role = value(cursor, "role");
+                String text = compact(value(cursor, "text"), 320);
+                items.add(new MemoryRanker.Candidate("", title + " " + text,
+                        cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                        "- " + titleLabel(title, value(cursor, "conversation_id")) + " " + role + ": " + text));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryRanker.Candidate> readConversationMessages(String projectId, String excludeConversationId) {
+        ArrayList<MemoryRanker.Candidate> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT c.id AS conversation_id, c.title AS title, m.role AS role, m.content AS text, m.timestamp AS updated_at "
+                        + "FROM messages m JOIN conversations c ON c.id = m.conversation_id "
+                        + "WHERE m.hidden = 0 AND m.exclude_from_context = 0 AND m.content != '' "
+                        + "AND (? = '' OR c.project_id = ? OR c.project_id IS NULL OR c.project_id = '') "
+                        + "AND (? = '' OR c.id != ?) ORDER BY m.timestamp DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), safe(excludeConversationId), safe(excludeConversationId), String.valueOf(SCAN_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                String title = value(cursor, "title");
+                String role = value(cursor, "role");
+                String text = compact(value(cursor, "text"), 320);
+                items.add(new MemoryRanker.Candidate("", title + " " + text,
+                        cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                        "- " + titleLabel(title, value(cursor, "conversation_id")) + " " + role + ": " + text));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryRanker.Candidate> readSkills() {
+        ArrayList<MemoryRanker.Candidate> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT name, path, description, updated_at FROM skills WHERE enabled = 1 ORDER BY updated_at DESC LIMIT ?",
+                new String[] {String.valueOf(SCAN_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                String name = value(cursor, "name");
+                String path = value(cursor, "path");
+                String description = value(cursor, "description");
+                StringBuilder formatted = new StringBuilder();
+                formatted.append("- ").append(name);
+                if (description.length() > 0) {
+                    formatted.append(" - ").append(description);
+                }
+                if (path.length() > 0) {
+                    formatted.append("\n  - SKILL.md: ").append(new File(path, "SKILL.md").getAbsolutePath());
+                    formatted.append("\n  - Root: ").append(path);
+                }
+                items.add(new MemoryRanker.Candidate("", name + " " + description + " " + path,
+                        cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                        formatted.toString()));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryOverviewState.Memory> readOverviewMemories(String scope, String projectId) {
+        ArrayList<MemoryOverviewState.Memory> items = new ArrayList<>();
+        String normalizedScope = normalizeScope(scope);
+        Cursor cursor;
+        if (MemoryOverviewState.Memory.SCOPE_USER.equals(normalizedScope)) {
+            cursor = database.getReadableDatabase().rawQuery(
+                    "SELECT id, scope, project_id, content, source, confidence, created_at, updated_at, last_used_at, use_count "
+                            + "FROM memories WHERE scope = 'user' ORDER BY updated_at DESC LIMIT ?",
+                    new String[] {String.valueOf(OVERVIEW_LIMIT)});
+        } else {
+            cursor = database.getReadableDatabase().rawQuery(
+                    "SELECT id, scope, project_id, content, source, confidence, created_at, updated_at, last_used_at, use_count "
+                            + "FROM memories WHERE scope = ? AND (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') ORDER BY updated_at DESC LIMIT ?",
+                    new String[] {normalizedScope, safe(projectId), safe(projectId), String.valueOf(OVERVIEW_LIMIT)});
+        }
+        try {
+            while (cursor.moveToNext()) {
+                items.add(new MemoryOverviewState.Memory(
+                        value(cursor, "id"), value(cursor, "scope"), value(cursor, "project_id"),
+                        value(cursor, "content"), value(cursor, "source"), doubleValue(cursor, "confidence"),
+                        longValue(cursor, "created_at"), longValue(cursor, "updated_at"),
+                        longValue(cursor, "last_used_at"), intValue(cursor, "use_count")));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryOverviewState.WorkingMemory> readOverviewWorkingMemory(String projectId) {
+        ArrayList<MemoryOverviewState.WorkingMemory> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT id, project_id, content, source, expires_at, created_at, updated_at FROM working_memory "
+                        + "WHERE (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') "
+                        + "AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?) ORDER BY updated_at DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), String.valueOf(System.currentTimeMillis()), String.valueOf(OVERVIEW_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                items.add(new MemoryOverviewState.WorkingMemory(
+                        value(cursor, "id"), value(cursor, "project_id"), value(cursor, "content"),
+                        value(cursor, "source"), longValue(cursor, "expires_at"),
+                        longValue(cursor, "created_at"), longValue(cursor, "updated_at")));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private List<MemoryOverviewState.HistoryEntry> readOverviewHistory(String projectId) {
+        ArrayList<MemoryOverviewState.HistoryEntry> items = new ArrayList<>();
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT id, project_id, conversation_id, message_id, role, text, title, created_at, updated_at "
+                        + "FROM conversation_index WHERE (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') ORDER BY updated_at DESC LIMIT ?",
+                new String[] {safe(projectId), safe(projectId), String.valueOf(OVERVIEW_LIMIT)});
+        try {
+            while (cursor.moveToNext()) {
+                items.add(new MemoryOverviewState.HistoryEntry(
+                        value(cursor, "id"), value(cursor, "project_id"), value(cursor, "conversation_id"),
+                        value(cursor, "message_id"), value(cursor, "role"), value(cursor, "text"),
+                        value(cursor, "title"), longValue(cursor, "created_at"), longValue(cursor, "updated_at")));
+            }
+        } finally {
+            cursor.close();
+        }
+        return items;
+    }
+
+    private ExistingMemory readExistingMemory(String id) {
+        String safeId = safe(id);
+        if (safeId.length() == 0) {
+            return new ExistingMemory();
+        }
+        Cursor cursor = database.getReadableDatabase().rawQuery(
+                "SELECT id, source, confidence, created_at, last_used_at, use_count FROM memories WHERE id = ? LIMIT 1",
+                new String[] {safeId});
+        try {
+            if (!cursor.moveToFirst()) {
+                return new ExistingMemory();
+            }
+            ExistingMemory memory = new ExistingMemory();
+            memory.id = value(cursor, "id");
+            memory.source = value(cursor, "source");
+            memory.confidence = doubleValue(cursor, "confidence");
+            memory.createdAt = longValue(cursor, "created_at");
+            memory.lastUsedAt = longValue(cursor, "last_used_at");
+            memory.useCount = intValue(cursor, "use_count");
+            return memory;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private String findSimilarMemoryId(String scope, String projectId, String content) {
+        String target = normalizedMemoryKey(content);
+        if (target.length() == 0) {
+            return "";
+        }
+        Cursor cursor;
+        if (MemoryOverviewState.Memory.SCOPE_USER.equals(normalizeScope(scope))) {
+            cursor = database.getReadableDatabase().rawQuery(
+                    "SELECT id, content FROM memories WHERE scope = 'user' ORDER BY updated_at DESC LIMIT ?",
+                    new String[] {String.valueOf(OVERVIEW_LIMIT)});
+        } else {
+            cursor = database.getReadableDatabase().rawQuery(
+                    "SELECT id, content FROM memories WHERE scope = ? AND (? = '' OR project_id = ? OR project_id IS NULL OR project_id = '') ORDER BY updated_at DESC LIMIT ?",
+                    new String[] {normalizeScope(scope), safe(projectId), safe(projectId), String.valueOf(OVERVIEW_LIMIT)});
+        }
+        try {
+            while (cursor.moveToNext()) {
+                String existing = normalizedMemoryKey(value(cursor, "content"));
+                if (existing.length() == 0) {
+                    continue;
+                }
+                if (existing.equals(target) || existing.contains(target) || target.contains(existing)) {
+                    return value(cursor, "id");
+                }
+            }
+        } finally {
+            cursor.close();
+        }
+        return "";
+    }
+
+    private void markMemoriesUsed(List<MemoryRanker.Candidate> memories) {
+        if (memories == null || memories.isEmpty()) {
+            return;
+        }
+        SQLiteDatabase db = database.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            long now = System.currentTimeMillis();
+            for (MemoryRanker.Candidate memory : memories) {
+                if (memory.id.length() == 0) {
+                    continue;
+                }
+                db.execSQL("UPDATE memories SET last_used_at = ?, use_count = use_count + 1 WHERE id = ?",
+                        new Object[] {now, memory.id});
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private String section(String title, List<MemoryRanker.Candidate> rows) {
+        if (rows.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(title);
+        for (MemoryRanker.Candidate row : rows) {
+            builder.append('\n').append(row.formatted);
+        }
+        return builder.toString();
+    }
+
+    private String skillPathsSection(String projectId) {
+        StringBuilder builder = new StringBuilder("### Skills 路径");
+        builder.append('\n').append("- app: ").append(workspacePaths.getSkillsRoot().getAbsolutePath());
+        if (safe(projectId).length() > 0) {
+            builder.append('\n').append("- project: ").append(new File(projectId, ".linecode/skills").getAbsolutePath());
+        }
+        builder.append('\n').append("- ssh: ~/.linecode/skills");
+        builder.append('\n').append("需要完整 Skill 指南时，可使用文件读取/搜索/列目录工具访问对应 SKILL.md；Skills 的创建和安装由扩展系统处理，文件工具只维护已授权目录里的 SKILL.md。");
+        return builder.toString();
+    }
+
+    private String privateBoundarySection() {
+        String skillsRoot = workspacePaths.getSkillsRoot().getAbsolutePath();
+        return "### 私有目录边界\n"
+                + "文件工具可使用系统明确注入的 Skills 路径（例如 " + skillsRoot + " 和当前项目 .linecode/skills）；不要猜测或访问其他应用私有目录。";
+    }
+
+    private String titleLabel(String title, String fallbackId) {
+        String value = safe(title).trim();
+        if (value.length() == 0) {
+            value = safe(fallbackId).trim();
+        }
+        return value.length() == 0 ? "相关对话" : "「" + value + "」";
+    }
+
+    private String compact(String text, int maxChars) {
+        String value = safe(text).replace('\n', ' ').replace('\r', ' ').trim();
+        while (value.contains("  ")) {
+            value = value.replace("  ", " ");
+        }
+        return value.length() <= maxChars ? value : value.substring(0, Math.max(0, maxChars - 3)) + "...";
+    }
+
+    private String normalizeScope(String scope) {
+        String value = safe(scope).trim().toLowerCase(Locale.ROOT);
+        if (MemoryOverviewState.Memory.SCOPE_PROJECT.equals(value)) {
+            return MemoryOverviewState.Memory.SCOPE_PROJECT;
+        }
+        if (MemoryOverviewState.Memory.SCOPE_ENVIRONMENT.equals(value)) {
+            return MemoryOverviewState.Memory.SCOPE_ENVIRONMENT;
+        }
+        return MemoryOverviewState.Memory.SCOPE_USER;
+    }
+
+    private String safeSource(String source) {
+        String value = safe(source).trim().toLowerCase(Locale.ROOT);
+        return "auto".equals(value) || "correction".equals(value) || "summary".equals(value) ? value : "manual";
+    }
+
+    private String normalizedMemoryKey(String content) {
+        String value = safe(content).toLowerCase(Locale.ROOT);
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isLetterOrDigit(ch) || (ch >= '\u4e00' && ch <= '\u9fff')) {
+                builder.append(ch);
+            }
+        }
+        return builder.toString();
+    }
+
+    private StringTemplate template() {
+        return new StringTemplate(promptTemplateRepository.getTemplateText(PromptTemplateRepository.ID_LEARNING_CONTEXT));
+    }
+
+    private static final class ExistingMemory {
+        String id = "";
+        String source = "";
+        double confidence;
+        long createdAt;
+        long lastUsedAt;
+        int useCount;
+    }
+}
