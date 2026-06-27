@@ -85,6 +85,7 @@ final class GenerationFlowController {
     private final StringBuilder pendingStreamTextDelta = new StringBuilder();
     private final StringBuilder pendingStreamReasoningDelta = new StringBuilder();
     private final HashMap<String, StringBuilder> streamingRawTextByMessageId = new HashMap<>();
+    private final Set<String> retryNoticeMessageIds = new HashSet<>();
     private final AgentExecutionController.Host agentHost = new AgentExecutionController.Host() {
         @Override
         public String projectPath() {
@@ -239,24 +240,7 @@ final class GenerationFlowController {
         host.render();
 
         backgroundTasks.execute("linecode-model-stream", () -> {
-            try {
-                AiBehaviorSettings aiSettings = aiBehaviorSettingsRepository.get();
-                ModelRequestOptions requestOptions = modelPromptController.requestOptions(aiSettings, selectedModel, 0);
-                ModelCompletionResponse response = modelClient.stream(selectedModel, requestMessages, new ModelStreamCallback() {
-                    @Override
-                    public void onTextDelta(String delta) {
-                        appendAssistantDelta(generationId, assistantId, delta, "");
-                    }
-
-                    @Override
-                    public void onReasoningDelta(String delta) {
-                        appendAssistantDelta(generationId, assistantId, "", delta);
-                    }
-                }, cancellationToken, requestOptions);
-                finishGeneration(generationId, assistantId, selectedModel, response, cancellationToken, 0);
-            } catch (ModelCompletionException e) {
-                failGeneration(generationId, assistantId, "模型通信失败：\n" + e.getMessage());
-            }
+            streamModelWithRetry(generationId, assistantId, selectedModel, requestMessages, cancellationToken, 0);
         });
     }
 
@@ -374,6 +358,9 @@ final class GenerationFlowController {
             return;
         }
         ChatMessage message = messages.get(index);
+        if (retryNoticeMessageIds.remove(assistantId)) {
+            message = message.withContent("", message.getReasoningContent(), true);
+        }
         StringBuilder rawText = streamingRawTextByMessageId.get(assistantId);
         if (rawText == null) {
             rawText = new StringBuilder(message.getContent());
@@ -416,6 +403,7 @@ final class GenerationFlowController {
     void cancelActiveGeneration() {
         pendingToolExecution = null;
         clearStreamingRawText();
+        retryNoticeMessageIds.clear();
     }
 
     void clearStreamingRawText() {
@@ -512,6 +500,7 @@ final class GenerationFlowController {
     ) {
         mainThread.post(() -> {
             flushPendingAssistantDelta();
+            retryNoticeMessageIds.remove(assistantId);
             if (!chatSessionStore.isActiveGeneration(generationId)) {
                 return;
             }
@@ -709,23 +698,73 @@ final class GenerationFlowController {
         messages.add(new ChatMessage(nextAssistantId, ChatMessage.Role.ASSISTANT, "", true));
         host.render();
         backgroundTasks.execute("linecode-tool-continuation", () -> {
+            streamModelWithRetry(generationId, nextAssistantId, selectedModel, nextRequestMessages, cancellationToken, usedToolCallCount);
+        });
+    }
+
+    private void streamModelWithRetry(
+            int generationId,
+            String assistantId,
+            ModelConfig selectedModel,
+            ArrayList<ModelMessage> requestMessages,
+            ModelCancellationToken cancellationToken,
+            int usedToolCallCount
+    ) {
+        int completedRetries = 0;
+        while (true) {
             try {
                 AiBehaviorSettings aiSettings = aiBehaviorSettingsRepository.get();
-                ModelRequestOptions nextRequestOptions = modelPromptController.requestOptions(aiSettings, selectedModel, usedToolCallCount);
-                ModelCompletionResponse response = modelClient.stream(selectedModel, nextRequestMessages, new ModelStreamCallback() {
+                ModelRequestOptions requestOptions = modelPromptController.requestOptions(aiSettings, selectedModel, usedToolCallCount);
+                ModelCompletionResponse response = modelClient.stream(selectedModel, requestMessages, new ModelStreamCallback() {
                     @Override
                     public void onTextDelta(String delta) {
-                        appendAssistantDelta(generationId, nextAssistantId, delta, "");
+                        appendAssistantDelta(generationId, assistantId, delta, "");
                     }
 
                     @Override
                     public void onReasoningDelta(String delta) {
-                        appendAssistantDelta(generationId, nextAssistantId, "", delta);
+                        appendAssistantDelta(generationId, assistantId, "", delta);
                     }
-                }, cancellationToken, nextRequestOptions);
-                finishGeneration(generationId, nextAssistantId, selectedModel, response, cancellationToken, usedToolCallCount);
+                }, cancellationToken, requestOptions);
+                finishGeneration(generationId, assistantId, selectedModel, response, cancellationToken, usedToolCallCount);
+                return;
             } catch (ModelCompletionException e) {
-                failGeneration(generationId, nextAssistantId, "模型通信失败：\n" + e.getMessage());
+                String message = e.getMessage();
+                if (cancellationToken != null && cancellationToken.isCancelled()) {
+                    failGeneration(generationId, assistantId, "模型通信失败：\n" + message);
+                    return;
+                }
+                if (!ModelStreamRetryPolicy.shouldRetry(message, completedRetries)) {
+                    failGeneration(generationId, assistantId, "模型通信失败：\n" + message);
+                    return;
+                }
+                completedRetries++;
+                showRetryNotice(generationId, assistantId, ModelStreamRetryPolicy.retryNotice(completedRetries));
+            }
+        }
+    }
+
+    private void showRetryNotice(int generationId, String assistantId, String notice) {
+        mainThread.post(() -> {
+            flushPendingAssistantDelta();
+            retryNoticeMessageIds.remove(assistantId);
+            if (!chatSessionStore.isActiveGeneration(generationId)) {
+                return;
+            }
+            int index = findMessageIndex(assistantId);
+            if (index < 0) {
+                return;
+            }
+            ChatMessage message = messages.get(index);
+            ChatMessage next = message.withContent(notice, message.getReasoningContent(), true);
+            messages.set(index, next);
+            retryNoticeMessageIds.add(assistantId);
+            StringBuilder rawText = streamingRawTextByMessageId.get(assistantId);
+            if (rawText != null) {
+                rawText.setLength(0);
+            }
+            if (!host.renderStreamingMessage(next)) {
+                host.render();
             }
         });
     }
@@ -852,6 +891,7 @@ final class GenerationFlowController {
     private void failGeneration(int generationId, String assistantId, String text) {
         mainThread.post(() -> {
             flushPendingAssistantDelta();
+            retryNoticeMessageIds.remove(assistantId);
             if (!chatSessionStore.isActiveGeneration(generationId)) {
                 return;
             }
